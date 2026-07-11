@@ -34,4 +34,21 @@ npm run build
 npm run lint
 npm run prisma:generate
 npm run prisma:migrate -- --name <migration-name>
+npm run prisma:migrate:deploy
 ```
+
+## Render deployment
+
+For Render, use the wrapper script instead of calling `prisma migrate dev` directly.
+
+```bash
+npm run prisma:generate
+npm run prisma:migrate
+npm run build
+```
+
+Notes:
+
+- The `prisma:migrate` wrapper automatically uses `prisma migrate deploy` in Render and other CI environments.
+- If you stay on SQLite in Render, attach a persistent disk and set `DATABASE_URL` to a file on that disk, for example `file:/var/data/hydrocarbons.db`.
+- Without a persistent disk, SQLite data will be reset when the service filesystem is replaced.

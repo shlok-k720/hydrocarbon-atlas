@@ -103,16 +103,27 @@ export default function HydrocarbonBuilderModal({
     return null;
   }
 
-  function getCanvasPoint(event: React.PointerEvent<SVGSVGElement>) {
-    const bounds = svgRef.current?.getBoundingClientRect();
+  function getCanvasPoint(event: React.PointerEvent<SVGElement>) {
+    const svg = svgRef.current;
 
-    if (!bounds) {
+    if (!svg) {
       return { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
     }
 
+    const matrix = svg.getScreenCTM();
+
+    if (!matrix) {
+      return { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
+    }
+
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const transformedPoint = point.matrixTransform(matrix.inverse());
+
     return {
-      x: ((event.clientX - bounds.left) / bounds.width) * CANVAS_WIDTH,
-      y: ((event.clientY - bounds.top) / bounds.height) * CANVAS_HEIGHT,
+      x: transformedPoint.x,
+      y: transformedPoint.y,
     };
   }
 
@@ -167,7 +178,11 @@ export default function HydrocarbonBuilderModal({
     });
   }
 
-  function handleCanvasPointerUp() {
+  function handleCanvasPointerUp(pointerId?: number) {
+    if (pointerId !== undefined && svgRef.current?.hasPointerCapture(pointerId)) {
+      svgRef.current.releasePointerCapture(pointerId);
+    }
+
     setDraggingNodeId(null);
   }
 
@@ -175,6 +190,7 @@ export default function HydrocarbonBuilderModal({
     event.stopPropagation();
 
     if (tool === "move") {
+      svgRef.current?.setPointerCapture(event.pointerId);
       setDraggingNodeId(nodeId);
       return;
     }
@@ -288,8 +304,13 @@ export default function HydrocarbonBuilderModal({
             className="canvas-grid h-[52vh] min-h-[380px] w-full touch-none"
             onPointerDown={handleCanvasPointerDown}
             onPointerMove={handleCanvasPointerMove}
-            onPointerUp={handleCanvasPointerUp}
-            onPointerLeave={handleCanvasPointerUp}
+            onPointerUp={(event) => handleCanvasPointerUp(event.pointerId)}
+            onPointerCancel={(event) => handleCanvasPointerUp(event.pointerId)}
+            onPointerLeave={(event) => {
+              if (!svgRef.current?.hasPointerCapture(event.pointerId)) {
+                handleCanvasPointerUp();
+              }
+            }}
           >
             {state.bonds.map((bond) => {
               const from = state.nodes.find((node) => node.id === bond.from);
