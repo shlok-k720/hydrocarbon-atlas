@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model LearnerProfile {
+  id        String       @id @default(cuid())
+  browserId String       @unique
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  attempts  QuizAttempt[]
+  topicStats TopicStat[]
+}
+
+model QuizAttempt {
+  id           String           @id @default(cuid())
+  profileId    String
+  profile      LearnerProfile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  questionId   String
+  questionType QuestionType
+  topic        HydrocarbonTopic
+  correct      Boolean
+  response     String?
+  createdAt    DateTime         @default(now())
+
+  @@index([profileId, questionType, createdAt])
+  @@index([profileId, topic, createdAt])
+}
+
+model TopicStat {
+  id              String           @id @default(cuid())
+  profileId       String
+  profile         LearnerProfile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  topic           HydrocarbonTopic
+  namingAttempts  Int              @default(0)
+  namingCorrect   Int              @default(0)
+  drawingAttempts Int              @default(0)
+  drawingCorrect  Int              @default(0)
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([profileId, topic])
+}
+
+enum QuestionType {
+  naming
+  drawing
+}
+
+enum HydrocarbonTopic {
+  alkanes
+  alkenes
+  alkynes
+  branched_isomers
+}
