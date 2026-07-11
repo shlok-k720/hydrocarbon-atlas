@@ -42,7 +42,6 @@ npm run prisma:migrate:deploy
 For Render, use the wrapper script instead of calling `prisma migrate dev` directly.
 
 ```bash
-npm run prisma:generate
 npm run prisma:migrate
 npm run build
 ```
@@ -50,5 +49,14 @@ npm run build
 Notes:
 
 - The `prisma:migrate` wrapper automatically uses `prisma migrate deploy` in Render and other CI environments.
+- The `build` script now runs `prisma generate` before `next build` so the generated Prisma client exists in fresh build environments.
+- The `start` script now rebuilds automatically if Render launches the service without a `.next` production artifact.
 - If you stay on SQLite in Render, attach a persistent disk and set `DATABASE_URL` to a file on that disk, for example `file:/var/data/hydrocarbons.db`.
 - Without a persistent disk, SQLite data will be reset when the service filesystem is replaced.
+
+Recommended Render dashboard commands:
+
+```bash
+Build Command: npm run prisma:migrate && npm run build
+Start Command: npm run start
+```
