@@ -21,6 +21,8 @@ export interface TopicPerformance {
   namingCorrect: number;
   drawingAttempts: number;
   drawingCorrect: number;
+  miscAttempts: number;
+  miscCorrect: number;
 }
 
 export interface QuizProgressPayload {
@@ -40,6 +42,8 @@ export function buildEmptyTopicPerformance(topic: HydrocarbonTopic): TopicPerfor
     namingCorrect: 0,
     drawingAttempts: 0,
     drawingCorrect: 0,
+    miscAttempts: 0,
+    miscCorrect: 0,
   };
 }
 
@@ -55,7 +59,7 @@ function normalizeName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-export function evaluateNamingAnswer(question: HydrocarbonQuestion, answer: string) {
+export function evaluateTextAnswer(question: HydrocarbonQuestion, answer: string) {
   const normalizedAnswer = normalizeName(answer);
 
   return question.acceptedAnswers.some(
@@ -63,9 +67,31 @@ export function evaluateNamingAnswer(question: HydrocarbonQuestion, answer: stri
   );
 }
 
+export const evaluateNamingAnswer = evaluateTextAnswer;
+
+function getAccuracyCounts(stat: TopicPerformance, questionType: QuestionType) {
+  if (questionType === "naming") {
+    return {
+      attempts: stat.namingAttempts,
+      correct: stat.namingCorrect,
+    };
+  }
+
+  if (questionType === "drawing") {
+    return {
+      attempts: stat.drawingAttempts,
+      correct: stat.drawingCorrect,
+    };
+  }
+
+  return {
+    attempts: stat.miscAttempts,
+    correct: stat.miscCorrect,
+  };
+}
+
 function getTopicAccuracy(stat: TopicPerformance, questionType: QuestionType) {
-  const attempts = questionType === "naming" ? stat.namingAttempts : stat.drawingAttempts;
-  const correct = questionType === "naming" ? stat.namingCorrect : stat.drawingCorrect;
+  const { attempts, correct } = getAccuracyCounts(stat, questionType);
 
   if (attempts === 0) {
     return 0.52;
@@ -75,7 +101,7 @@ function getTopicAccuracy(stat: TopicPerformance, questionType: QuestionType) {
 }
 
 function getTopicAttemptCount(stat: TopicPerformance, questionType: QuestionType) {
-  return questionType === "naming" ? stat.namingAttempts : stat.drawingAttempts;
+  return getAccuracyCounts(stat, questionType).attempts;
 }
 
 function sortTopicsForAdaptiveReview(

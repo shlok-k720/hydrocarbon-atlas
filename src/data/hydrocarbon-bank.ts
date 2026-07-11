@@ -4,7 +4,13 @@ export type HydrocarbonTopic =
   | "alkynes"
   | "branched_isomers";
 
-export type QuestionType = "naming" | "drawing";
+export type QuestionType = "naming" | "drawing" | "misc";
+
+export type MiscQuestionKind =
+  | "hydrogen-count"
+  | "carbon-count"
+  | "formula"
+  | "family";
 
 export type BondOrder = 1 | 2 | 3;
 
@@ -69,6 +75,8 @@ export interface HydrocarbonQuestion {
   familyLabel: string;
   studyNote: string;
   structure: CarbonStructure;
+  answerPlaceholder?: string;
+  miscKind?: MiscQuestionKind;
 }
 
 const CHAIN_PREFIXES: Record<number, string> = {
@@ -99,7 +107,34 @@ export const TOPIC_LABELS: Record<HydrocarbonTopic, string> = {
 
 export const HYDROCARBON_TOPICS = Object.keys(TOPIC_LABELS) as HydrocarbonTopic[];
 
-export const QUESTION_TYPES: QuestionType[] = ["naming", "drawing"];
+export const QUESTION_TYPES: QuestionType[] = ["naming", "drawing", "misc"];
+
+const FAMILY_ANSWERS: Record<
+  HydrocarbonTopic,
+  { label: string; acceptedAnswers: string[] }
+> = {
+  alkanes: {
+    label: "alkane",
+    acceptedAnswers: ["alkane", "alkanes"],
+  },
+  alkenes: {
+    label: "alkene",
+    acceptedAnswers: ["alkene", "alkenes"],
+  },
+  alkynes: {
+    label: "alkyne",
+    acceptedAnswers: ["alkyne", "alkynes"],
+  },
+  branched_isomers: {
+    label: "branched isomer",
+    acceptedAnswers: [
+      "branched isomer",
+      "branched isomers",
+      "branched alkane",
+      "branched alkanes",
+    ],
+  },
+};
 
 const MAIN_CHAIN_X_STEP = 96;
 const MAIN_CHAIN_Y_SWING = 34;
@@ -759,7 +794,20 @@ if (moleculeBank.length !== 100) {
   throw new Error(`Expected 100 molecules in the bank, received ${moleculeBank.length}.`);
 }
 
-export const hydrocarbonQuestions: HydrocarbonQuestion[] = moleculeBank.flatMap(
+function parseFormula(formula: string) {
+  const match = /^C(\d+)H(\d+)$/i.exec(formula);
+
+  if (!match) {
+    throw new Error(`Unexpected molecular formula format: ${formula}`);
+  }
+
+  return {
+    carbonCount: Number(match[1]),
+    hydrogenCount: Number(match[2]),
+  };
+}
+
+const namingAndDrawingQuestions: HydrocarbonQuestion[] = moleculeBank.flatMap(
   (molecule) => [
     {
       id: `${molecule.id}-naming`,
@@ -772,6 +820,7 @@ export const hydrocarbonQuestions: HydrocarbonQuestion[] = moleculeBank.flatMap(
       familyLabel: molecule.familyLabel,
       studyNote: molecule.studyNote,
       structure: molecule.structure,
+      answerPlaceholder: "Type the IUPAC name",
     },
     {
       id: `${molecule.id}-drawing`,
@@ -788,6 +837,83 @@ export const hydrocarbonQuestions: HydrocarbonQuestion[] = moleculeBank.flatMap(
   ],
 );
 
+export const miscQuestions: HydrocarbonQuestion[] = moleculeBank.map((molecule, index) => {
+  const formulaParts = parseFormula(molecule.formula);
+  const familyAnswer = FAMILY_ANSWERS[molecule.topic];
+  const questionIndex = index % 4;
+
+  if (questionIndex === 0) {
+    return {
+      id: `${molecule.id}-misc-hydrogens`,
+      type: "misc",
+      topic: molecule.topic,
+      prompt: `How many hydrogens are in ${molecule.name}?`,
+      answerLabel: String(formulaParts.hydrogenCount),
+      acceptedAnswers: [String(formulaParts.hydrogenCount), `H${formulaParts.hydrogenCount}`],
+      formula: molecule.formula,
+      familyLabel: molecule.familyLabel,
+      studyNote: `${molecule.name} has molecular formula ${molecule.formula}, so it contains ${formulaParts.hydrogenCount} hydrogen atoms.`,
+      structure: molecule.structure,
+      answerPlaceholder: "Enter the hydrogen count",
+      miscKind: "hydrogen-count",
+    };
+  }
+
+  if (questionIndex === 1) {
+    return {
+      id: `${molecule.id}-misc-carbons`,
+      type: "misc",
+      topic: molecule.topic,
+      prompt: `How many carbon atoms are in ${molecule.name}?`,
+      answerLabel: String(formulaParts.carbonCount),
+      acceptedAnswers: [String(formulaParts.carbonCount), `C${formulaParts.carbonCount}`],
+      formula: molecule.formula,
+      familyLabel: molecule.familyLabel,
+      studyNote: `${molecule.name} contains ${formulaParts.carbonCount} carbon atoms, which is also visible in the formula ${molecule.formula}.`,
+      structure: molecule.structure,
+      answerPlaceholder: "Enter the carbon count",
+      miscKind: "carbon-count",
+    };
+  }
+
+  if (questionIndex === 2) {
+    return {
+      id: `${molecule.id}-misc-formula`,
+      type: "misc",
+      topic: molecule.topic,
+      prompt: `What is the molecular formula of ${molecule.name}?`,
+      answerLabel: molecule.formula,
+      acceptedAnswers: [molecule.formula],
+      formula: molecule.formula,
+      familyLabel: molecule.familyLabel,
+      studyNote: `${molecule.name} follows the structural pattern summarised by ${molecule.formula}.`,
+      structure: molecule.structure,
+      answerPlaceholder: "Type the molecular formula",
+      miscKind: "formula",
+    };
+  }
+
+  return {
+    id: `${molecule.id}-misc-family`,
+    type: "misc",
+    topic: molecule.topic,
+    prompt: `Which hydrocarbon family does ${molecule.name} belong to?`,
+    answerLabel: familyAnswer.label,
+    acceptedAnswers: familyAnswer.acceptedAnswers,
+    formula: molecule.formula,
+    familyLabel: molecule.familyLabel,
+    studyNote: `${molecule.name} belongs to the ${familyAnswer.label} family. ${molecule.studyNote}`,
+    structure: molecule.structure,
+    answerPlaceholder: "Type the hydrocarbon family",
+    miscKind: "family",
+  };
+});
+
+export const hydrocarbonQuestions: HydrocarbonQuestion[] = [
+  ...namingAndDrawingQuestions,
+  ...miscQuestions,
+];
+
 export const namingQuestions = hydrocarbonQuestions.filter(
   (question) => question.type === "naming",
 );
@@ -796,8 +922,16 @@ export const drawingQuestions = hydrocarbonQuestions.filter(
   (question) => question.type === "drawing",
 );
 
-if (namingQuestions.length !== 100 || drawingQuestions.length !== 100) {
-  throw new Error("Expected exactly 100 naming questions and 100 drawing questions.");
+export const miscQuestionSet = hydrocarbonQuestions.filter(
+  (question) => question.type === "misc",
+);
+
+if (
+  namingQuestions.length !== 100 ||
+  drawingQuestions.length !== 100 ||
+  miscQuestionSet.length !== 100
+) {
+  throw new Error("Expected exactly 100 naming, 100 drawing, and 100 misc questions.");
 }
 
 export const questionById = new Map(
@@ -823,3 +957,4 @@ export const featuredExamples = [
 
 export const namingQuestionCount = namingQuestions.length;
 export const drawingQuestionCount = drawingQuestions.length;
+export const miscQuestionCount = miscQuestionSet.length;

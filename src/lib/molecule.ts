@@ -2,7 +2,9 @@ import type {
   BondOrder,
   CarbonNode,
   CarbonStructure,
+  MoleculeDefinition,
 } from "@/data/hydrocarbon-bank";
+import { moleculeBank } from "@/data/hydrocarbon-bank";
 
 export type BuilderAtom = "C" | "H";
 
@@ -27,6 +29,16 @@ export interface BuilderState {
 
 export interface DrawingEvaluation {
   correct: boolean;
+  message: string;
+  detail: string;
+}
+
+export interface DrawingIdentification {
+  valid: boolean;
+  exactMatch: boolean;
+  matchedMolecule: MoleculeDefinition | null;
+  formula: string | null;
+  familyGuess: string | null;
   message: string;
   detail: string;
 }
@@ -234,7 +246,7 @@ export function autoFillHydrogens(state: BuilderState): BuilderState {
   return nextState;
 }
 
-function validateBuilderState(state: BuilderState) {
+export function validateBuilderState(state: BuilderState) {
   if (state.nodes.length === 0) {
     return {
       valid: false,
@@ -298,7 +310,7 @@ function validateBuilderState(state: BuilderState) {
   };
 }
 
-function extractCarbonStructure(state: BuilderState): CarbonStructure {
+export function extractCarbonStructure(state: BuilderState): CarbonStructure {
   const nodeMap = getNodeMap(state.nodes);
 
   return {
@@ -316,7 +328,7 @@ function extractCarbonStructure(state: BuilderState): CarbonStructure {
   };
 }
 
-function isConnected(structure: CarbonStructure) {
+export function isConnected(structure: CarbonStructure) {
   if (structure.carbons.length <= 1) {
     return true;
   }
@@ -383,7 +395,7 @@ function buildVertexSignature(matrix: number[][], index: number) {
   return `${bonds.join("")}|${totalBondOrder}`;
 }
 
-function areIsomorphic(
+export function areIsomorphic(
   left: CarbonStructure,
   right: CarbonStructure,
   ignoreOrder: boolean,
@@ -461,6 +473,107 @@ export function countBuilderAtoms(state: BuilderState) {
     carbonCount,
     hydrogenCount,
     bondCount: state.bonds.length,
+  };
+}
+
+export function calculateCarbonStructureFormula(structure: CarbonStructure) {
+  const carbonCount = structure.carbons.length;
+  const hydrogenCount = structure.carbons.reduce((sum, carbon) => {
+    return sum + clampValence(4 - getValence(structure.bonds, carbon.id));
+  }, 0);
+
+  return `C${carbonCount}H${hydrogenCount}`;
+}
+
+function guessFamilyLabel(structure: CarbonStructure) {
+  if (structure.bonds.some((bond) => bond.order === 3)) {
+    return "alkyne-like hydrocarbon";
+  }
+
+  if (structure.bonds.some((bond) => bond.order === 2)) {
+    return "alkene-like hydrocarbon";
+  }
+
+  const carbonNeighborCounts = structure.carbons.map((carbon) => {
+    return getIncidentBonds(structure.bonds, carbon.id).length;
+  });
+
+  if (carbonNeighborCounts.some((count) => count >= 3)) {
+    return "branched alkane-like hydrocarbon";
+  }
+
+  return "alkane-like hydrocarbon";
+}
+
+export function identifyDrawnHydrocarbon(state: BuilderState): DrawingIdentification {
+  const validation = validateBuilderState(state);
+
+  if (!validation.valid) {
+    return {
+      valid: false,
+      exactMatch: false,
+      matchedMolecule: null,
+      formula: null,
+      familyGuess: null,
+      message: validation.message,
+      detail: "Add a connected hydrocarbon framework before identifying the drawing.",
+    };
+  }
+
+  const carbonStructure = extractCarbonStructure(state);
+
+  if (!isConnected(carbonStructure)) {
+    return {
+      valid: false,
+      exactMatch: false,
+      matchedMolecule: null,
+      formula: null,
+      familyGuess: null,
+      message: "The carbon framework must be one connected molecule.",
+      detail: "Reconnect any isolated fragment before asking the site to identify it.",
+    };
+  }
+
+  const exactMatch =
+    moleculeBank.find((molecule) => areIsomorphic(molecule.structure, carbonStructure, false)) ??
+    null;
+
+  if (exactMatch) {
+    return {
+      valid: true,
+      exactMatch: true,
+      matchedMolecule: exactMatch,
+      formula: exactMatch.formula,
+      familyGuess: exactMatch.familyLabel,
+      message: `You have drawn ${exactMatch.name}.`,
+      detail: `${exactMatch.studyNote} This matches a named structure from the study bank exactly.`,
+    };
+  }
+
+  const frameworkMatch =
+    moleculeBank.find((molecule) => areIsomorphic(molecule.structure, carbonStructure, true)) ??
+    null;
+
+  if (frameworkMatch) {
+    return {
+      valid: true,
+      exactMatch: false,
+      matchedMolecule: frameworkMatch,
+      formula: calculateCarbonStructureFormula(carbonStructure),
+      familyGuess: frameworkMatch.familyLabel,
+      message: `This looks like ${frameworkMatch.name}, but the bond order is off.`,
+      detail: `The carbon framework matches ${frameworkMatch.name}. Recheck whether the structure should use single, double, or triple bonds.`,
+    };
+  }
+
+  return {
+    valid: true,
+    exactMatch: false,
+    matchedMolecule: null,
+    formula: calculateCarbonStructureFormula(carbonStructure),
+    familyGuess: guessFamilyLabel(carbonStructure),
+    message: "This structure is not in the current named study bank.",
+    detail: `The drawing is still a valid ${guessFamilyLabel(carbonStructure)} with formula ${calculateCarbonStructureFormula(carbonStructure)}.`,
   };
 }
 

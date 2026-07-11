@@ -12,6 +12,7 @@ import {
 import {
   drawingQuestionCount,
   featuredExamples,
+  miscQuestionCount,
   namingQuestionCount,
 } from "@/data/hydrocarbon-bank";
 
@@ -25,7 +26,7 @@ export default function Home() {
             Learn hydrocarbon naming by reading structures and drawing them back from memory.
           </h1>
           <p className="mt-5 max-w-3xl text-lg leading-8 text-[color:var(--muted)]">
-            This site combines concise revision notes, structural pattern recognition, and an adaptive quiz engine. You get 100 naming questions, 100 drawing questions, persistent progress in SQLite, and a modal builder where you can place carbons, hydrogens, and bond orders.
+            This site combines concise revision notes, structural pattern recognition, and an adaptive quiz engine. You get 100 naming questions, 100 drawing questions, 100 misc fact questions, persistent progress in SQLite, and both quiz and free-practice drawing boards where you can place carbons, hydrogens, and bond orders.
           </p>
 
           <div className="mt-8 flex flex-wrap gap-3">
@@ -68,13 +69,13 @@ export default function Home() {
             </div>
             <div className="rounded-[1.6rem] bg-white/80 p-4">
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[color:var(--accent)]">
-                Adaptive engine
+                Misc bank
               </p>
               <p className="mt-2 text-3xl font-semibold text-[color:var(--foreground)]">
-                4 topics
+                {miscQuestionCount}
               </p>
               <p className="mt-2 text-sm text-[color:var(--muted)]">
-                Accuracy is tracked by topic and by question type, so weak areas reappear sooner.
+                Name-to-fact prompts on formulas, hydrogen counts, carbon counts, and family recognition.
               </p>
             </div>
             <div className="rounded-[1.6rem] bg-white/80 p-4">

@@ -40,6 +40,8 @@ model TopicStat {
   namingCorrect   Int              @default(0)
   drawingAttempts Int              @default(0)
   drawingCorrect  Int              @default(0)
+  miscAttempts    Int              @default(0)
+  miscCorrect     Int              @default(0)
   updatedAt       DateTime         @updatedAt
 
   @@unique([profileId, topic])
@@ -48,6 +50,7 @@ model TopicStat {
 enum QuestionType {
   naming
   drawing
+  misc
 }
 
 enum HydrocarbonTopic {

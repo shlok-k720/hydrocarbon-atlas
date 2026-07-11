@@ -50,6 +50,8 @@ async function loadProfile(browserId: string) {
           namingCorrect: true,
           drawingAttempts: true,
           drawingCorrect: true,
+          miscAttempts: true,
+          miscCorrect: true,
         },
       },
     },
@@ -173,6 +175,14 @@ export async function POST(request: Request) {
       }
     }
 
+    if (payload.questionType === "misc") {
+      topicUpdate.miscAttempts = { increment: 1 };
+
+      if (payload.correct) {
+        topicUpdate.miscCorrect = { increment: 1 };
+      }
+    }
+
     await transaction.topicStat.upsert({
       where: {
         profileId_topic: {
@@ -187,6 +197,8 @@ export async function POST(request: Request) {
         namingCorrect: payload.questionType === "naming" && payload.correct ? 1 : 0,
         drawingAttempts: payload.questionType === "drawing" ? 1 : 0,
         drawingCorrect: payload.questionType === "drawing" && payload.correct ? 1 : 0,
+        miscAttempts: payload.questionType === "misc" ? 1 : 0,
+        miscCorrect: payload.questionType === "misc" && payload.correct ? 1 : 0,
       },
       update: topicUpdate,
     });
@@ -212,6 +224,8 @@ export async function POST(request: Request) {
             namingCorrect: true,
             drawingAttempts: true,
             drawingCorrect: true,
+            miscAttempts: true,
+            miscCorrect: true,
           },
         },
       },
