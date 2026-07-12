@@ -25,6 +25,7 @@ Open `http://localhost:3000` in the browser.
 - Static lesson content and the 200-question bank live in `src/data/`.
 - Quiz progress is stored in SQLite at `prisma/dev.db`.
 - Prisma client output is generated into `src/generated/prisma`.
+- The local runtime SQLite file `dev.db` is gitignored and generated automatically at startup by applying Prisma migrations.
 
 ## Useful scripts
 
@@ -35,6 +36,7 @@ npm run lint
 npm run prisma:generate
 npm run prisma:migrate -- --name <migration-name>
 npm run prisma:migrate:deploy
+npm run db:bootstrap
 ```
 
 ## Render deployment
@@ -51,6 +53,7 @@ Notes:
 - The `prisma:migrate` wrapper automatically uses `prisma migrate deploy` in Render and other CI environments.
 - The `build` script now runs `prisma generate` before `next build` so the generated Prisma client exists in fresh build environments.
 - The `start` script now rebuilds automatically if Render launches the service without a `.next` production artifact.
+- Both `npm run dev` and `npm run start` run a startup database bootstrap that creates the SQLite file and applies existing migrations if the database is missing.
 - If you stay on SQLite in Render, attach a persistent disk and set `DATABASE_URL` to a file on that disk, for example `file:/var/data/hydrocarbons.db`.
 - Without a persistent disk, SQLite data will be reset when the service filesystem is replaced.
 

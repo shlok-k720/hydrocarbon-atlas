@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
+import { ensureDatabase } from "./ensure-database.mjs";
 
 const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
 
@@ -46,5 +47,6 @@ function startServer() {
   });
 }
 
+ensureDatabase();
 runBuildIfMissing();
 startServer();

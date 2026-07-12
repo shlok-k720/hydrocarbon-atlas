@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node ./scripts/start-development.mjs",
     "build": "npm run prisma:generate && next build",
     "start": "node ./scripts/start-production.mjs",
     "postinstall": "prisma generate",
@@ -11,7 +11,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "node ./scripts/prisma-migrate.mjs",
     "prisma:migrate:dev": "prisma migrate dev",
-    "prisma:migrate:deploy": "prisma migrate deploy"
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "db:bootstrap": "node ./scripts/ensure-database.mjs"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.8.0",
