@@ -5,6 +5,7 @@ import {
   type HydrocarbonTopic,
   type QuestionType,
 } from "@/data/hydrocarbon-bank";
+import { normalizeUsername } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   buildEmptyTopicPerformance,
@@ -15,7 +16,9 @@ import {
 export const dynamic = "force-dynamic";
 
 interface AttemptPayload {
-  browserId: string;
+  browserId?: string;
+  profileMode?: "guest" | "account";
+  username?: string;
   questionId: string;
   questionType: QuestionType;
   topic: HydrocarbonTopic;
@@ -23,38 +26,70 @@ interface AttemptPayload {
   response?: string;
 }
 
+type ProfileIdentity =
+  | {
+      profileMode: "guest";
+      browserId: string;
+    }
+  | {
+      profileMode: "account";
+      username: string;
+    };
+
 const VALID_TOPICS = new Set(HYDROCARBON_TOPICS);
 const VALID_QUESTION_TYPES = new Set(QUESTION_TYPES);
 
-async function loadProfile(browserId: string) {
-  return prisma.learnerProfile.upsert({
-    where: { browserId },
-    create: { browserId },
-    update: {},
-    include: {
-      attempts: {
-        orderBy: { createdAt: "asc" },
-        select: {
-          questionId: true,
-          questionType: true,
-          topic: true,
-          correct: true,
-          createdAt: true,
-        },
-      },
-      topicStats: {
-        orderBy: { topic: "asc" },
-        select: {
-          topic: true,
-          namingAttempts: true,
-          namingCorrect: true,
-          drawingAttempts: true,
-          drawingCorrect: true,
-          miscAttempts: true,
-          miscCorrect: true,
-        },
+function getProfileInclude() {
+  return {
+    attempts: {
+      orderBy: { createdAt: "asc" as const },
+      select: {
+        questionId: true,
+        questionType: true,
+        topic: true,
+        correct: true,
+        createdAt: true,
       },
     },
+    topicStats: {
+      orderBy: { topic: "asc" as const },
+      select: {
+        topic: true,
+        namingAttempts: true,
+        namingCorrect: true,
+        drawingAttempts: true,
+        drawingCorrect: true,
+        miscAttempts: true,
+        miscCorrect: true,
+      },
+    },
+  };
+}
+
+async function loadProfile(identity: ProfileIdentity) {
+  if (identity.profileMode === "account") {
+    const account = await prisma.userAccount.findUnique({
+      where: { username: identity.username },
+      select: { id: true },
+    });
+
+    if (!account) {
+      throw new Error("ACCOUNT_NOT_FOUND");
+    }
+
+    return prisma.learnerProfile.upsert({
+      where: { userId: account.id },
+      create: { userId: account.id },
+      update: {},
+      include: getProfileInclude(),
+    });
+  }
+
+  return prisma.learnerProfile.upsert({
+    where: { browserId: identity.browserId },
+    create: { browserId: identity.browserId },
+    update: {},
+    include: getProfileInclude(),
   });
 }
 
@@ -82,25 +117,73 @@ function isAttemptPayload(value: unknown): value is AttemptPayload {
   const candidate = value as Record<string, unknown>;
 
   return (
-    typeof candidate.browserId === "string" &&
     typeof candidate.questionId === "string" &&
     typeof candidate.questionType === "string" &&
     typeof candidate.topic === "string" &&
-    typeof candidate.correct === "boolean"
+    typeof candidate.correct === "boolean" &&
+    (typeof candidate.browserId === "string" || typeof candidate.username === "string")
   );
+}
+
+function resolveIdentityFromSearchParams(searchParams: URLSearchParams): ProfileIdentity | null {
+  const profileMode = searchParams.get("profileMode");
+  const browserId = searchParams.get("browserId");
+  const username = searchParams.get("username");
+
+  if ((profileMode === "account" || username) && username) {
+    return {
+      profileMode: "account",
+      username: normalizeUsername(username),
+    };
+  }
+
+  if (browserId) {
+    return {
+      profileMode: "guest",
+      browserId,
+    };
+  }
+
+  return null;
+}
+
+function resolveIdentityFromAttempt(payload: AttemptPayload): ProfileIdentity | null {
+  if ((payload.profileMode === "account" || payload.username) && payload.username) {
+    return {
+      profileMode: "account",
+      username: normalizeUsername(payload.username),
+    };
+  }
+
+  if (payload.browserId) {
+    return {
+      profileMode: "guest",
+      browserId: payload.browserId,
+    };
+  }
+
+  return null;
 }
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const browserId = searchParams.get("browserId");
+  const identity = resolveIdentityFromSearchParams(searchParams);
 
-  if (!browserId) {
-    return Response.json({ error: "Missing browserId query parameter." }, { status: 400 });
+  if (!identity) {
+    return Response.json({ error: "Missing browserId or account username." }, { status: 400 });
   }
 
-  const profile = await loadProfile(browserId);
+  try {
+    const profile = await loadProfile(identity);
 
-  return Response.json(serializeProfile(profile));
+    return Response.json(serializeProfile(profile));
+  } catch (error) {
+    if (error instanceof Error && error.message === "ACCOUNT_NOT_FOUND") {
+      return Response.json({ error: "The saved account no longer exists." }, { status: 404 });
+    }
+
+    throw error;
+  }
 }
 
 export async function POST(request: Request) {
@@ -138,99 +221,108 @@ export async function POST(request: Request) {
   }
 
   const responseText = typeof payload.response === "string" ? payload.response.slice(0, 300) : null;
+  const identity = resolveIdentityFromAttempt(payload);
 
-  const updatedProfile = await prisma.$transaction(async (transaction) => {
-    const profile = await transaction.learnerProfile.upsert({
-      where: { browserId: payload.browserId },
-      create: { browserId: payload.browserId },
-      update: {},
-    });
+  if (!identity) {
+    return Response.json({ error: "Missing guest browser ID or account username." }, { status: 400 });
+  }
 
-    await transaction.quizAttempt.create({
-      data: {
-        profileId: profile.id,
-        questionId: payload.questionId,
-        questionType: payload.questionType,
-        topic: payload.topic,
-        correct: payload.correct,
-        response: responseText,
-      },
-    });
+  try {
+    const updatedProfile = await prisma.$transaction(async (transaction) => {
+      let profile;
 
-    const topicUpdate: Record<string, { increment: number }> = {};
+      if (identity.profileMode === "account") {
+        const account = await transaction.userAccount.findUnique({
+          where: { username: identity.username },
+          select: { id: true },
+        });
 
-    if (payload.questionType === "naming") {
-      topicUpdate.namingAttempts = { increment: 1 };
+        if (!account) {
+          throw new Error("ACCOUNT_NOT_FOUND");
+        }
 
-      if (payload.correct) {
-        topicUpdate.namingCorrect = { increment: 1 };
+        profile = await transaction.learnerProfile.upsert({
+          where: { userId: account.id },
+          create: { userId: account.id },
+          update: {},
+        });
+      } else {
+        profile = await transaction.learnerProfile.upsert({
+          where: { browserId: identity.browserId },
+          create: { browserId: identity.browserId },
+          update: {},
+        });
       }
-    }
 
-    if (payload.questionType === "drawing") {
-      topicUpdate.drawingAttempts = { increment: 1 };
+      await transaction.quizAttempt.create({
+        data: {
+          profileId: profile.id,
+          questionId: payload.questionId,
+          questionType: payload.questionType,
+          topic: payload.topic,
+          correct: payload.correct,
+          response: responseText,
+        },
+      });
 
-      if (payload.correct) {
-        topicUpdate.drawingCorrect = { increment: 1 };
+      const topicUpdate: Record<string, { increment: number }> = {};
+
+      if (payload.questionType === "naming") {
+        topicUpdate.namingAttempts = { increment: 1 };
+
+        if (payload.correct) {
+          topicUpdate.namingCorrect = { increment: 1 };
+        }
       }
-    }
 
-    if (payload.questionType === "misc") {
-      topicUpdate.miscAttempts = { increment: 1 };
+      if (payload.questionType === "drawing") {
+        topicUpdate.drawingAttempts = { increment: 1 };
 
-      if (payload.correct) {
-        topicUpdate.miscCorrect = { increment: 1 };
+        if (payload.correct) {
+          topicUpdate.drawingCorrect = { increment: 1 };
+        }
       }
-    }
 
-    await transaction.topicStat.upsert({
-      where: {
-        profileId_topic: {
+      if (payload.questionType === "misc") {
+        topicUpdate.miscAttempts = { increment: 1 };
+
+        if (payload.correct) {
+          topicUpdate.miscCorrect = { increment: 1 };
+        }
+      }
+
+      await transaction.topicStat.upsert({
+        where: {
+          profileId_topic: {
+            profileId: profile.id,
+            topic: payload.topic,
+          },
+        },
+        create: {
           profileId: profile.id,
           topic: payload.topic,
+          namingAttempts: payload.questionType === "naming" ? 1 : 0,
+          namingCorrect: payload.questionType === "naming" && payload.correct ? 1 : 0,
+          drawingAttempts: payload.questionType === "drawing" ? 1 : 0,
+          drawingCorrect: payload.questionType === "drawing" && payload.correct ? 1 : 0,
+          miscAttempts: payload.questionType === "misc" ? 1 : 0,
+          miscCorrect: payload.questionType === "misc" && payload.correct ? 1 : 0,
         },
-      },
-      create: {
-        profileId: profile.id,
-        topic: payload.topic,
-        namingAttempts: payload.questionType === "naming" ? 1 : 0,
-        namingCorrect: payload.questionType === "naming" && payload.correct ? 1 : 0,
-        drawingAttempts: payload.questionType === "drawing" ? 1 : 0,
-        drawingCorrect: payload.questionType === "drawing" && payload.correct ? 1 : 0,
-        miscAttempts: payload.questionType === "misc" ? 1 : 0,
-        miscCorrect: payload.questionType === "misc" && payload.correct ? 1 : 0,
-      },
-      update: topicUpdate,
+        update: topicUpdate,
+      });
+
+      return transaction.learnerProfile.findUniqueOrThrow({
+        where: { id: profile.id },
+        include: getProfileInclude(),
+      });
     });
 
-    return transaction.learnerProfile.findUniqueOrThrow({
-      where: { id: profile.id },
-      include: {
-        attempts: {
-          orderBy: { createdAt: "asc" },
-          select: {
-            questionId: true,
-            questionType: true,
-            topic: true,
-            correct: true,
-            createdAt: true,
-          },
-        },
-        topicStats: {
-          orderBy: { topic: "asc" },
-          select: {
-            topic: true,
-            namingAttempts: true,
-            namingCorrect: true,
-            drawingAttempts: true,
-            drawingCorrect: true,
-            miscAttempts: true,
-            miscCorrect: true,
-          },
-        },
-      },
-    });
-  });
+    return Response.json(serializeProfile(updatedProfile));
+  } catch (error) {
+    if (error instanceof Error && error.message === "ACCOUNT_NOT_FOUND") {
+      return Response.json({ error: "The account for this session no longer exists." }, { status: 404 });
+    }
 
-  return Response.json(serializeProfile(updatedProfile));
+    throw error;
+  }
 }

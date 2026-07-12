@@ -2,6 +2,8 @@
 
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
+import { useAuth } from "@/components/AuthProvider";
+import { buildQuizIdentityPayload, buildQuizSearchParams } from "@/lib/auth";
 import {
   TOPIC_LABELS,
   type HydrocarbonQuestion,
@@ -155,7 +157,7 @@ function buildOptimisticProgress(
 }
 
 export default function AdaptiveQuiz() {
-  const browserIdRef = useRef<string | null>(null);
+  const { isReady: isAuthReady, openAuthModal, session } = useAuth();
   const practiceBoardRef = useRef<HTMLDivElement | null>(null);
   const [progress, setProgress] = useState<QuizProgressPayload | null>(null);
   const [mode, setMode] = useState<QuestionType>("naming");
@@ -172,21 +174,25 @@ export default function AdaptiveQuiz() {
   const [builderOpen, setBuilderOpen] = useState(false);
 
   useEffect(() => {
-    const savedBrowserId = window.localStorage.getItem("hydrocarbon-browser-id");
-    const nextBrowserId = savedBrowserId ?? crypto.randomUUID();
+    async function syncProgress() {
+      if (!isAuthReady) {
+        setLoading(true);
+        return;
+      }
 
-    if (!savedBrowserId) {
-      window.localStorage.setItem("hydrocarbon-browser-id", nextBrowserId);
-    }
+      if (!session) {
+        setProgress(null);
+        setCurrentQuestion(null);
+        setLoading(false);
+        return;
+      }
 
-    browserIdRef.current = nextBrowserId;
+      setLoading(true);
 
-    void (async () => {
       try {
-        const response = await fetch(
-          `/api/quiz?browserId=${encodeURIComponent(nextBrowserId)}`,
-          { cache: "no-store" },
-        );
+        const response = await fetch(`/api/quiz?${buildQuizSearchParams(session)}`, {
+          cache: "no-store",
+        });
 
         if (!response.ok) {
           throw new Error("Could not load saved quiz progress.");
@@ -195,7 +201,8 @@ export default function AdaptiveQuiz() {
         const payload = (await response.json()) as QuizProgressPayload;
 
         setProgress(payload);
-        setCurrentQuestion(selectNextQuestion("naming", payload.attempts, payload.topicStats));
+        setCurrentQuestion(selectNextQuestion(mode, payload.attempts, payload.topicStats));
+        setError(null);
       } catch (requestError) {
         const message =
           requestError instanceof Error
@@ -206,8 +213,10 @@ export default function AdaptiveQuiz() {
       } finally {
         setLoading(false);
       }
-    })();
-  }, []);
+    }
+
+    void syncProgress();
+  }, [isAuthReady, mode, session]);
 
   useEffect(() => {
     function handleFullscreenChange() {
@@ -287,7 +296,7 @@ export default function AdaptiveQuiz() {
   }
 
   async function handleSubmit() {
-    if (!browserIdRef.current || !progress || !currentQuestion) {
+    if (!session || !progress || !currentQuestion) {
       return;
     }
 
@@ -362,7 +371,7 @@ export default function AdaptiveQuiz() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          browserId: browserIdRef.current,
+          ...buildQuizIdentityPayload(session),
           questionId: currentQuestion.id,
           questionType: currentQuestion.type,
           topic: currentQuestion.topic,
@@ -422,6 +431,27 @@ export default function AdaptiveQuiz() {
         <p className="mt-3 max-w-2xl text-base text-[color:var(--muted)]">
           The site is opening the question bank and syncing your saved topic accuracy from SQLite.
         </p>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="surface-card p-8">
+        <p className="section-kicker">Adaptive quiz</p>
+        <h3 className="mt-2 text-2xl font-semibold text-[color:var(--foreground)]">
+          Choose a profile to begin
+        </h3>
+        <p className="mt-3 max-w-2xl text-base text-[color:var(--muted)]">
+          Sign in with a user ID to load the progress tied to that account, or continue as a guest profile stored on this browser.
+        </p>
+        <button
+          type="button"
+          onClick={openAuthModal}
+          className="mt-5 rounded-full bg-[color:var(--accent)] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(15,118,110,0.25)]"
+        >
+          Open login modal
+        </button>
       </div>
     );
   }

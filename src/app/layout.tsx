@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AuthProvider } from "@/components/AuthProvider";
 import { Sora, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
 
@@ -28,7 +29,9 @@ export default function RootLayout({
       lang="en"
       className={`${sora.variable} ${sourceSerif.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }
