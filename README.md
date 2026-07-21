@@ -9,6 +9,10 @@ A Next.js learning site for hydrocarbon revision. The app includes:
 - a structure-building modal with carbon, hydrogen, and bond tools
 - SQLite-backed progress tracking through Prisma
 
+## Guides
+
+- [docs/adaptive-quiz-engine-guide.md](docs/adaptive-quiz-engine-guide.md) explains how to design and build a reusable adaptive quiz engine for any subject area.
+
 ## Run locally
 
 ```bash
